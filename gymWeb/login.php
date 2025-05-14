@@ -3,28 +3,32 @@ session_start();
 include 'includes/conexion.php';
 
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
-    $usuario = $_POST['usuario'];
-    $contraseña = $_POST['contraseña'];
+    // Sanitización básica
+    $usuario = filter_input(INPUT_POST, 'usuario', FILTER_SANITIZE_STRING);
+    $contraseña = filter_input(INPUT_POST, 'contraseña', FILTER_SANITIZE_STRING);
     
     if (empty($usuario) || empty($contraseña)) {
         $error = "Por favor, complete todos los campos";
     } else {
-        $stmt = $conn->prepare("SELECT * FROM usuarios WHERE usuario = ?");
+        // Prepared statement para evitar SQL injection
+        $stmt = $conn->prepare("SELECT id, usuario, contraseña FROM usuarios WHERE usuario = ? LIMIT 1");
         $stmt->execute([$usuario]);
-        $user = $stmt->fetch();
         
-        if ($user && password_verify($contraseña, $user['contraseña'])) {
-            $_SESSION['usuario'] = $user['usuario'];
-            $_SESSION['id_usuario'] = $user['id'];
-            header("Location: tienda.php");
-            exit();
-        } else {
-            $error = "Usuario o contraseña incorrectos";
+        if ($stmt->rowCount() == 1) {
+            $user = $stmt->fetch(PDO::FETCH_ASSOC);
+            
+            if (password_verify($contraseña, $user['contraseña'])) {
+                $_SESSION['usuario'] = htmlspecialchars($user['usuario']);
+                $_SESSION['id_usuario'] = (int)$user['id'];
+                header("Location: tienda.php");
+                exit();
+            }
         }
+        
+        $error = "Usuario o contraseña incorrectos";
     }
 }
 ?>
-
 <!DOCTYPE html>
 <html lang="es">
 <head>

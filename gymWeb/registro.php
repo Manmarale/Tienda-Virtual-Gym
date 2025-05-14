@@ -2,26 +2,67 @@
 include 'includes/conexion.php';
 
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
-    $usuario = $_POST['usuario'];
-    $contraseña = password_hash($_POST['contraseña'], PASSWORD_DEFAULT);
-    $nombre = $_POST['nombre'];
-    $apellidos = $_POST['apellidos'];
-    $correo = $_POST['correo'];
-    
-    try {
-        // Insertar cliente
-        $stmt = $conn->prepare("INSERT INTO clientes (nombre, apellidos, correo) VALUES (?, ?, ?)");
-        $stmt->execute([$nombre, $apellidos, $correo]);
-        $id_cliente = $conn->lastInsertId();
-        
-        // Insertar usuario
-        $stmt = $conn->prepare("INSERT INTO usuarios (usuario, contraseña, id_cliente) VALUES (?, ?, ?)");
-        $stmt->execute([$usuario, $contraseña, $id_cliente]);
-        
-        header("Location: login.php?registro=exito");
-        exit();
-    } catch(PDOException $e) {
-        $error = "Error al registrar: " . $e->getMessage();
+    // Sanitización de datos
+    $usuario = trim(filter_input(INPUT_POST, 'usuario', FILTER_SANITIZE_STRING));
+    $contraseña = $_POST['contraseña'];
+    $nombre = trim(filter_input(INPUT_POST, 'nombre', FILTER_SANITIZE_STRING));
+    $apellidos = trim(filter_input(INPUT_POST, 'apellidos', FILTER_SANITIZE_STRING));
+    $correo = filter_var(trim($_POST['correo']), FILTER_SANITIZE_EMAIL);
+    $fecha_nacimiento = !empty($_POST['fecha_nacimiento']) ? $_POST['fecha_nacimiento'] : NULL;
+    $genero = !empty($_POST['genero']) ? $_POST['genero'] : NULL;
+
+    // Validaciones
+    $errores = [];
+    if (empty($usuario)) $errores[] = "Usuario requerido";
+    if (empty($contraseña)) $errores[] = "Contraseña requerida";
+    if (strlen($contraseña) < 8) $errores[] = "La contraseña debe tener al menos 8 caracteres";
+    if (!filter_var($correo, FILTER_VALIDATE_EMAIL)) $errores[] = "Email no válido";
+
+    if (empty($errores)) {
+        try {
+            $conn->beginTransaction();
+
+            // 1. Insertar cliente
+            $stmtCliente = $conn->prepare("INSERT INTO clientes 
+                (nombre, apellidos, correo, fecha_nacimiento, genero) 
+                VALUES (?, ?, ?, ?, ?)");
+            
+            $stmtCliente->execute([
+                $nombre,
+                $apellidos,
+                $correo,
+                $fecha_nacimiento,
+                $genero
+            ]);
+            
+            $id_cliente = $conn->lastInsertId();
+
+            // 2. Insertar usuario
+            $hash = password_hash($contraseña, PASSWORD_BCRYPT);
+            $stmtUsuario = $conn->prepare("INSERT INTO usuarios 
+                (usuario, contraseña, id_cliente) 
+                VALUES (?, ?, ?)");
+                
+            $stmtUsuario->execute([
+                $usuario,
+                $hash,
+                $id_cliente
+            ]);
+
+            $conn->commit();
+            header("Location: login.php?registro=exito");
+            exit();
+
+        } catch(PDOException $e) {
+            $conn->rollBack();
+            $error = "Error en el registro: " . $e->getMessage();
+            // Para debugging:
+            error_log("Error de registro: " . $e->getMessage());
+            error_log("Consulta cliente: " . $sqlCliente ?? '');
+            error_log("Consulta usuario: " . $sqlUsuario ?? '');
+        }
+    } else {
+        $error = implode("<br>", $errores);
     }
 }
 ?>
